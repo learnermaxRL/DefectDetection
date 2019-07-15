@@ -125,7 +125,72 @@ class SSIMAutoEncoder:
             output = self.conv_layer_encoder(key,output,value,padding,activation)
 
         return output
+        
+    def loss_ssim(self,im1,im2):
 
+
+                ksizes = [1, 11, 11, 1]
+                strides = [1, 1, 1, 1]
+                rates = [1, 1, 1, 1]
+
+
+                
+                patches1 = tf.extract_image_patches(
+                        im1,
+                        ksizes,
+                        strides,
+                        padding = 'SAME',
+                        rates = rates,
+                        name=None
+                )
+
+                patches2 = tf.extract_image_patches(
+                        im2,
+                        ksizes,
+                        strides,
+                        padding = 'SAME',
+                        rates = rates,
+                        name=None
+                )
+                shape = tf.shape(im1)
+
+
+                patches1 = tf.reshape(patches1,shape=[shape[0],ksizes[1],ksizes[2],-1])
+                patches2 = tf.reshape(patches2,shape=[shape[0],ksizes[1],ksizes[2],-1])
+                patches1 = tf.transpose(patches1, perm=[0,3,1,2])
+                patches1 = tf.expand_dims(
+                                            patches1,
+                                            axis=4,
+                                            name=None,
+                                            dim=None
+                                        )
+                patches2 = tf.transpose(patches2, perm=[0,3,1,2])
+                patches2 = tf.expand_dims(
+                                            patches2,
+                                            axis=4,
+                                            name=None,
+                                            dim=None
+                                        )
+                shape1 = tf.math.reduce_min(tf.reshape(patches1,[-1]))
+                shape2 = tf.math.reduce_min(tf.reshape(patches2,[-1]))
+                # patches1 = (tf.squeeze(patches1, 0))
+                # patches2 = (tf.squeeze(patches2, 0))
+
+
+
+                ssim_scores = (tf.image.ssim(patches1,patches2,max_val = 1.0))
+                ssim_residual = (tf.reshape(ssim_scores,shape = shape,name = "ssim_residual"))
+                
+                flattened_res  = tf.reshape(ssim_residual,[-1])
+                flattened_res_diss = tf.math.negative(
+                                    flattened_res,
+                                    name="str_dissim"
+                                )
+
+                total_loss = tf.reduce_sum(flattened_res,name="loss")
+                return ssim_residual,total_loss
+                
+git 
 
     def get_decoder_model(self):
 
@@ -162,39 +227,38 @@ class SSIMAutoEncoder:
             # self.output_shape =output_shape
             print (output_shape)
             output = self.conv_layer_decoder(key,output,value,output_shape,padding,activation)
+            output = tf.math.tanh(output)
 
         reconstructedImage = output
 
         #computing ssim loss
-        ssim2 = tf.image.ssim(reconstructedImage,self.curr_graph.get_tensor_by_name("inp:0") , max_val=1.0)
-        optimizer = tf.train.AdamOptimizer(learning_rate = 0.00002,beta1=0.000005,name = 'optimizer').minimize(ssim)
+        ssim2,ssim3 = self.loss_ssim(reconstructedImage,self.curr_graph.get_tensor_by_name("inp:0"))
+        # optimizer = tf.train.AdamOptimizer(learning_rate = 0.00002,beta1=0.000005,name = 'optimizer').minimize(ssim)
 
-        return ssim2,optimizer
-
+        return ssim2,ssim3
 
     
-    def train(self):
 
-        loss,optimizer = self.get_decoder_model()
-        init = tf.initialize_all_variables()
-        with tf.Session() as sess:
 
-    # Run the initializer
-                sess.run(init)
 
-                # Training
-                for i in range(1, num_steps+1):
-                    # Prepare Data
-                    # Get the next batch of MNIST data (only images are needed, not labels)
-                    batch_x, _ = mnist.train.next_batch(batch_size)
 
-                    # Run optimization op (backprop) and cost op (to get loss value)
-                    _, l = sess.run([optimizer, loss], feed_dict={self.inputImage: batch_x})
 
-                    # Display logs per step
-                    if i % display_step == 0 or i == 1:
-                        print('Step %i: Minibatch Loss: %f' % (i, l))
+from pylab import imshow, show, get_cmap
+from numpy import random
 
+Z = random.random((2,128,128,1))
+mod = SSIMAutoEncoder()
+
+loss,optimizer = mod.get_decoder_model()
+init = tf.initialize_all_variables()
+with tf.Session() as sess:
+
+# Run the initializer
+        sess.run(init)
+        l = sess.run([loss,optimizer],feed_dict={mod.curr_graph.get_tensor_by_name("inp:0") : Z})
+        print (l)
+        
+        
 
 
 
@@ -208,3 +272,4 @@ class SSIMAutoEncoder:
 
     
     
+
